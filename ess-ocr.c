@@ -234,8 +234,8 @@ int print_char(gray **image, gray max, int top, int bottom, int left, int right)
 			if ((col == left) || (col == right)) {
 				line[i++] = '|';
 			}
-			line[i++] = figures[(sizeof(figures)-1)-image[row][col]/(max/sizeof(figures))];
-			line[i++] = figures[(sizeof(figures)-1)-image[row][col]/(max/sizeof(figures))];
+			line[i++] = figures[(sizeof(figures))-image[row][col]/(max/sizeof(figures))];
+			line[i++] = figures[(sizeof(figures))-image[row][col]/(max/sizeof(figures))];
 		}
 		line[i++] = '\0';
 		puts(line);
