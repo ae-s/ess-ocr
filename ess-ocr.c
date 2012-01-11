@@ -48,6 +48,8 @@ struct recognition {
 };
 
 struct trained_picture {
+	int rows;
+	int cols;
 	gray **data;
 	int example_count;
 	struct trained_picture *next;
@@ -361,10 +363,12 @@ int train_char(gray **image, gray max, int top, int bottom, int left, int right,
 	for (int row = top - overshoot;
 	     row < bottom + overshoot;
 	     row++) {
+		if (row > chosen_one->rows) break;
 		t_col = 0;
 		for (int col = left - overshoot;
 		     col < right + overshoot;
 		     col++) {
+			if (col > chosen_one->cols) break;
 			chosen_one->data[t_row][t_col] += image[row][col];
 			t_col++;
 		}
