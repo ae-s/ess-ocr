@@ -72,10 +72,11 @@ int main(int argc, char *argv[])
 
 	image = pgm_readpgm(fp, &pcols, &prows, &max);
 
+#define DPI 300
 	puts("Finding columns");
-	col_loc = rowdown(image, max, VERT, prows, pcols, 12.75);
+	col_loc = rowdown(image, max, VERT, prows, pcols, .06375 * DPI);
 	puts("Finding rows");
-	row_loc = rowdown(image, max, HORZ, prows, pcols, 21.5);
+	row_loc = rowdown(image, max, HORZ, prows, pcols, .10750 * DPI);
 
 	printf("%d rows and %d columns\n", row_loc[0], col_loc[0]);
 
