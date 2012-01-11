@@ -30,6 +30,13 @@ int query_char	(gray **image, gray max, int top, int bottom, int left, int right
 struct recognition *recognize_char	(gray **image, gray max, int top, int bottom, int left, int right);
 int train_char	(gray **image, gray max, int top, int bottom, int left, int right, int codepoint);
 
+int find_square (gray **image, gray max,
+		 int xmax, int ymax,
+		 int *ul_x, int *ul_y,
+		 int *ur_x, int *ur_y,
+		 int *ll_x, int *ll_y,
+		 int *lr_x, int *lr_y);
+void crop_to_rect(gray ***image, int *cols, int *rows, gray max);
 
 #define MAX_RECOGNITION 16
 struct recognition {
@@ -59,6 +66,7 @@ int main(int argc, char *argv[])
 {
 	gray **image;
 	FILE *fp;
+	FILE *outfile;
 	gray max;
 	int prows, pcols;
 	int *row_loc;
@@ -69,8 +77,16 @@ int main(int argc, char *argv[])
 	pgm_init(&argc, argv);
 
 	fp = fopen(argv[1], "r");
-
 	image = pgm_readpgm(fp, &pcols, &prows, &max);
+	fclose(fp);
+
+	puts("Cropping");
+	crop_to_rect(&image, &pcols, &prows, max);
+	printf("- is now %d cols by %d rows\n", pcols, prows);
+
+	fp = fopen("crop.pgm", "w");
+	pgm_writepgm(fp, image, pcols, prows, max, 0);
+	fclose(fp);
 
 #define DPI 300
 	puts("Finding columns");
@@ -359,3 +375,139 @@ int train_char(gray **image, gray max, int top, int bottom, int left, int right,
 	return;
 }
 
+#define SMALL_RATIO (0.2)
+
+int find_square(gray **image, gray max_pix,
+		int xmax, int ymax,
+		int *ul_x, int *ul_y,
+		int *ur_x, int *ur_y,
+		int *ll_x, int *ll_y,
+		int *lr_x, int *lr_y)
+{
+	int top = 0;
+	int left = 0;
+	int right = 0;
+	int bot = 0;
+
+	float max = INFINITY, peak = 0;
+	int max_i, peak_i;
+
+	printf("ymax %d, xmax %d\n", ymax, xmax);
+
+	// 50 = skip black border
+	for (int i = 50 ; i < (ymax * SMALL_RATIO) ; i++) {
+		float sum = row_count(image, max_pix, HORZ, ymax, xmax, i);
+		if (sum < max) {
+			// typical white line
+			max = sum;
+			max_i = i;
+		}
+		if (sum > peak) {
+			// found a border, probably
+			peak = sum;
+			peak_i = i;
+		}
+
+		// test for past-the-border
+		if ((peak / max > (SMALL_RATIO)) && (fabs(sum / peak) < (1 - SMALL_RATIO)))
+			top = peak_i;
+	}
+
+	max = INFINITY; peak = 0;
+	// 50 = skip the black border around the page
+	for (int i = ymax - 50 ; i > (ymax * (1 - SMALL_RATIO)) ; i--) {
+		float sum = row_count(image, max_pix, HORZ, ymax, xmax, i);
+		if (sum < max) {
+			// found a typical white line
+			max = sum;
+			max_i = i;
+		}
+		if (sum > peak) {
+			// found a border, probably
+			peak = sum;
+			peak_i = i;
+		}
+
+		// test for past-the-border
+		if ((peak / max > SMALL_RATIO) && (fabs(sum / peak) < (1 - SMALL_RATIO)))
+			bot = peak_i;
+	}
+
+	// 50 = skip black border
+	max = INFINITY; peak = 0;
+	for (int i = 50 ; i < (xmax * SMALL_RATIO) ; i++) {
+		float sum = row_count(image, max_pix, VERT, ymax, xmax, i);
+		if (sum < max) {
+			// typical white line
+			max = sum;
+			max_i = i;
+		}
+		if (sum > peak) {
+			// found a border, probably
+			peak = sum;
+			peak_i = i;
+		}
+
+		// test for past-the-border
+		if ((peak / max > SMALL_RATIO) && (fabs(sum / peak) < (1 - SMALL_RATIO)))
+			left = peak_i;
+	}
+
+	max = INFINITY; peak = 0;
+	for (int i = xmax - 50 ; i > (xmax * (1 - SMALL_RATIO)) ; i--) {
+		float sum = row_count(image, max_pix, VERT, ymax, xmax, i);
+		if (sum < max) {
+			// typical white line
+			max = sum;
+			max_i = i;
+		}
+		if (sum > peak) {
+			// found a border, probably
+			peak = sum;
+			peak_i = i;
+		}
+
+		// test for past-the-border
+		if ((peak / max > SMALL_RATIO) && (fabs(sum / peak) < (1 - SMALL_RATIO)))
+			right = peak_i;
+	}
+
+	*ul_y = *ur_y = top;
+	*ll_y = *lr_y = bot;
+	*ul_x = *ll_x = left;
+	*ur_x = *lr_x = right;
+
+	return 0;
+}
+
+void crop_to_rect(gray ***image, int *cols, int *rows, gray max)
+{
+	int ul_x, ul_y, ur_x, ur_y, ll_x, ll_y, lr_x, lr_y;
+	gray **img_new;
+	int new_rows, new_cols;
+
+	puts("squaring");
+	find_square(*image, max, *cols, *rows,
+		    &ul_x, &ul_y,
+		    &ur_x, &ur_y,
+		    &ll_x, &ll_y,
+		    &lr_x, &lr_y);
+
+	printf("from (%d, %d) to (%d, %d)\n", ul_x, ul_y, lr_x, lr_y);
+
+	new_cols = (ur_x - ul_x);
+	new_rows = (ll_y - ul_y);
+	printf("cropping to %d cols by %d rows\n", new_cols, new_rows);
+	img_new = pgm_allocarray(new_cols, new_rows);
+
+	for (int x = ul_x; x < ur_x; x++) {
+		for (int y = ul_y; y < ll_y; y++) {
+			img_new[y - ul_y][x - ul_x] = (*image)[y][x];
+		}
+	}
+
+	*rows = new_rows;
+	*cols = new_cols;
+	pgm_freearray(*image, rows);
+	*image = img_new;
+}
