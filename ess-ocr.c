@@ -138,6 +138,10 @@ int *rowdown(gray **image, gray max, int direction, int num_rows, int num_cols, 
 		}
 	}
 
+	printf("Splits for direction %d ... \n", direction);
+	printf("  suggested at intervals of %f\n", distance);
+	printf("  are from %f at intervals of %f, with goodness of %f.\n", best_offset, best_dist, best_cost);
+
 	splits = malloc(sizeof(int) * ceil(dimension / best_dist + 1));
 
 	j = 1;
@@ -171,6 +175,8 @@ float *countup(gray **image, gray max, int direction, int num_rows, int num_cols
 
 /* `offset' is the row or column number to add up.
  * If given HORZ, count across the image; VERT count up and down.
+ *
+ * returns (0) for full white row, (1 * row size) for full black row.
  */
 float row_count(gray **image, gray max, int direction, int num_rows, int num_cols, int offset)
 {
