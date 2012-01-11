@@ -75,6 +75,9 @@ int main(int argc, char *argv[])
 	int *row_loc;
 	int *col_loc;
 
+	char *out_page;
+	int out_page_ptr;
+
 	int c_row, c_col;
 
 	pgm_init(&argc, argv);
@@ -105,16 +108,23 @@ int main(int argc, char *argv[])
 	}
 */
 
+	out_page = malloc(2048 * sizeof(char));
+
 	for (c_row = 1; c_row < row_loc[0] - 1; c_row++) {
 		for (c_col = 1; c_col < col_loc[0]; c_col++) {
+			char chr;
 			struct recognition *recog = recognize_char(image, max, row_loc[c_row], row_loc[c_row+1], col_loc[c_col], col_loc[c_col+1]);
-			if (recog->guess[0].codepoint == 'X') {
-				query_char(image, max, row_loc[c_row], row_loc[c_row+1], col_loc[c_col], col_loc[c_col+1]);
+			chr = recog->guess[0].codepoint;
+			if (chr == 'X') {
+				chr = query_char(image, max, row_loc[c_row], row_loc[c_row+1], col_loc[c_col], col_loc[c_col+1]);
 			}
 			free(recog);
+			out_page[out_page_ptr++] = chr;
+			out_page[out_page_ptr + 1] = '\0';
+			puts(out_page);
+			printf("ptr %d\n", out_page_ptr);
 		}
-		putchar('\n');
-
+		out_page[out_page_ptr++] = '\n';
 	}
 
 	return 0;
@@ -270,6 +280,7 @@ int query_char(gray **image, gray max, int top, int bottom, int left, int right)
 	puts("What is this?");
 	fgets(&input, 9, stdin);
 	train_char(image, max, top, bottom, left, right, (int)input[0]);
+	return (int) input[0];
 }
 
 /* Attempt to identify a character mechanically.
