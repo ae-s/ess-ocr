@@ -5,10 +5,18 @@
  * gcc ess-ocr.c -ggdb3 -Wall -lnetpbm -lm -std=c99
  */
 
+//#define _POSIX_SOURCE
+
+#include <sys/unistd.h>
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <limits.h>
-#include <math.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#include <dirent.h>
 
 #include <pgm.h>
 
@@ -27,8 +35,11 @@ float row_count	(gray **image, gray max, int direction, int num_rows, int num_co
 
 int print_char	(gray **image, gray max, int top, int bottom, int left, int right);
 int query_char	(gray **image, gray max, int top, int bottom, int left, int right);
-struct recognition *recognize_char	(gray **image, gray max, int top, int bottom, int left, int right);
-int train_char	(gray **image, gray max, int top, int bottom, int left, int right, int codepoint);
+struct recognition *recognize_char	(gray **image, gray max,
+					 int top, int bottom, int left, int right);
+void train_char	(gray **image, gray max,
+		 int top, int bottom, int left, int right,
+		 int codepoint, int overshoot, int dirty);
 
 int find_square (gray **image, gray max,
 		 int xmax, int ymax,
@@ -36,8 +47,10 @@ int find_square (gray **image, gray max,
 		 int *ur_x, int *ur_y,
 		 int *ll_x, int *ll_y,
 		 int *lr_x, int *lr_y);
-void crop_to_rect(gray ***image, int *cols, int *rows, gray max);
-void write_debug(gray **image, gray max, int cols, int rows, int col[], int row[]);
+void crop_to_rect	(gray ***image, int *cols, int *rows, gray max);
+void write_debug	(gray **image, gray max, int cols, int rows, int col[], int row[]);
+int training_save	(void);
+int train_load_char	(char *filename);
 
 float compare_char(gray **reference,
 		   gray refmax,
@@ -54,18 +67,19 @@ struct recognition {
 };
 
 struct trained_picture {
+	int dirty;	// 0 if this picture also exists on disk.
 	int rows;
 	int cols;
 	int max;
 	gray **data;
-	struct trained_picture *next;
+	struct trained_picture *next;	// linked list
 };
 
 #define UNDEFINED_CODEPOINT 0
 #define MAX_CODEPOINT MAXINT
 struct trained_char {
 	int codepoint;
-	struct trained_picture *pictures;
+	struct trained_picture *pictures;	// head of linked list
 };
 
 struct trained_char *training_data;
@@ -91,6 +105,8 @@ int main(int argc, char *argv[])
 	fp = fopen(argv[1], "r");
 	image = pgm_readpgm(fp, &pcols, &prows, &max);
 	fclose(fp);
+
+	training_load();
 
 	puts("Cropping");
 	crop_to_rect(&image, &pcols, &prows, max);
@@ -120,11 +136,15 @@ int main(int argc, char *argv[])
 		for (c_col = 1; c_col < col_loc[0]; c_col++) {
 			char chr;
 			struct recognition *recog = recognize_char(image, max, row_loc[c_row], row_loc[c_row+1], col_loc[c_col], col_loc[c_col+1]);
-			chr = recog->guess[0].codepoint;
-			if (chr == 'X') {
+			if (recog != NULL) {
+				chr = recog->guess[0].codepoint;
+				if (chr == 'X') {
+					chr = query_char(image, max, row_loc[c_row], row_loc[c_row+1], col_loc[c_col], col_loc[c_col+1]);
+				}
+				free(recog);
+			} else {
 				chr = query_char(image, max, row_loc[c_row], row_loc[c_row+1], col_loc[c_col], col_loc[c_col+1]);
 			}
-			free(recog);
 			out_page[out_page_ptr++] = chr;
 			out_page[out_page_ptr + 1] = '\0';
 			puts(out_page);
@@ -132,6 +152,10 @@ int main(int argc, char *argv[])
 		}
 		out_page[out_page_ptr++] = '\n';
 	}
+
+	outfile = fopen(argv[2], "w");
+	fwrite(out_page, sizeof(char), out_page_ptr, outfile);
+	fclose(outfile);
 
 	return 0;
 }
@@ -276,6 +300,25 @@ int print_char(gray **image, gray max, int top, int bottom, int left, int right)
 	return 0;
 }
 
+int print_char_plain(gray **image, gray max, int rows, int cols)
+{
+	char figures[] = {' ', '.', '*', '%', 'A', '#', '@'};
+
+	printf("This image is %d rows by %d cols up to %d\n", rows, cols, max);
+
+	char line[cols + 2];
+	for (int y = 0; y < rows; y++) {
+		int x;
+		for (x = 0; x < cols; x++) {
+			line[x] = figures[(sizeof(figures))-image[y][x]/(max/sizeof(figures))];
+			printf("%04x ", image[y][x]);
+		}
+		line[++x] = '\0';
+		puts(line);
+	}
+	return 0;
+}
+
 /* Ask the user to identify a character.
  */
 int query_char(gray **image, gray max, int top, int bottom, int left, int right)
@@ -285,7 +328,8 @@ int query_char(gray **image, gray max, int top, int bottom, int left, int right)
 	print_char(image, max, top, bottom, left, right);
 	puts("What is this?");
 	fgets(&input, 9, stdin);
-	train_char(image, max, top, bottom, left, right, (int)input[0]);
+	train_char(image, max, top, bottom, left, right, (int)input[0], 1, 1);
+	training_save();
 	return (int) input[0];
 }
 
@@ -318,8 +362,9 @@ struct recognition *recognize_char(gray **image, gray max, int top, int bottom, 
 		int test_count = 0;
 
 		cur_test = training_data;
+		if (cur_test == NULL) return NULL;
 
-		while (test_count < training_size) {
+		while (training_data[test_count].codepoint != UNDEFINED_CODEPOINT) {
 			struct trained_picture *pic;
 			cur_best_val = INFINITY;
 			pic = cur_test->pictures;
@@ -331,7 +376,7 @@ struct recognition *recognize_char(gray **image, gray max, int top, int bottom, 
 						bval = compare_char(pic->data, pic->max,
 								    pic->rows, pic->cols,
 								    image, max,
-								    top, bottom, left, right);
+								    top + yo, bottom + yo, left + xo, right + xo);
 						if (bval < cur_best_val)
 							cur_best_val = bval;
 					}
@@ -384,25 +429,28 @@ float compare_char(gray **reference,
 	}
 
 	error = sqrt(error / (row * col)) / testmax;
+
+//	printf("%d,%d / %d,%d - ", top, left, bottom, right);
+//	printf("compares to %f\n", error);
 	return error;
 }
 
 /* Put a character into the set of trained pictures.
  */
-int train_char(gray **image, gray max, int top, int bottom, int left, int right, int codepoint)
+void train_char(gray **image, gray max, int top, int bottom, int left, int right, int codepoint, int overshoot, int dirty)
 {
 	int i = 0;
-	int overshoot = 1;
 	int t_row, t_col;
 	struct trained_picture *chosen_one;
 
 	if (training_data == NULL) {
-		training_data = malloc(128 * sizeof(struct trained_char));
 		training_size = 128;
+		training_data = malloc(training_size * sizeof(struct trained_char));
 		memset(training_data, 0, training_size * sizeof(struct trained_char));
 	}
 
 	chosen_one = malloc(sizeof(struct trained_picture));
+	chosen_one->dirty = dirty;
 	chosen_one->rows = bottom-top + 2 * overshoot;
 	chosen_one->cols = right-left + 2 * overshoot;
 	chosen_one->data = pgm_allocarray(chosen_one->cols, chosen_one->rows);
@@ -411,8 +459,7 @@ int train_char(gray **image, gray max, int top, int bottom, int left, int right,
 
 	for (t_row = 0; t_row < bottom-top + 2*overshoot; t_row++)
 		for (t_col = 0; t_col < right-left + 2*overshoot; t_col++) {
-			gray dat = image[top + t_row][left + t_col];
-			chosen_one->data[t_row][t_col] = dat;
+			(chosen_one->data)[t_row][t_col] = image[top + t_row][left + t_col];
 		}
 
 	while (1) {
@@ -441,6 +488,7 @@ int train_char(gray **image, gray max, int top, int bottom, int left, int right,
 		}
 	}
 
+/*
 	t_row = 0;
 	t_col = 0;
 	for (int row = top - overshoot;
@@ -457,6 +505,7 @@ int train_char(gray **image, gray max, int top, int bottom, int left, int right,
 		}
 		t_row++;
 	}
+*/
 	return;
 }
 
@@ -475,7 +524,7 @@ int find_square(gray **image, gray max_pix,
 	int bot = 0;
 
 	float max = INFINITY, peak = 0;
-	int max_i, peak_i;
+	int peak_i;
 
 	printf("ymax %d, xmax %d\n", ymax, xmax);
 
@@ -485,7 +534,6 @@ int find_square(gray **image, gray max_pix,
 		if (sum < max) {
 			// typical white line
 			max = sum;
-			max_i = i;
 		}
 		if (sum > peak) {
 			// found a border, probably
@@ -505,7 +553,6 @@ int find_square(gray **image, gray max_pix,
 		if (sum < max) {
 			// found a typical white line
 			max = sum;
-			max_i = i;
 		}
 		if (sum > peak) {
 			// found a border, probably
@@ -525,7 +572,6 @@ int find_square(gray **image, gray max_pix,
 		if (sum < max) {
 			// typical white line
 			max = sum;
-			max_i = i;
 		}
 		if (sum > peak) {
 			// found a border, probably
@@ -544,7 +590,6 @@ int find_square(gray **image, gray max_pix,
 		if (sum < max) {
 			// typical white line
 			max = sum;
-			max_i = i;
 		}
 		if (sum > peak) {
 			// found a border, probably
@@ -593,7 +638,7 @@ void crop_to_rect(gray ***image, int *cols, int *rows, gray max)
 
 	*rows = new_rows;
 	*cols = new_cols;
-	pgm_freearray(*image, rows);
+	pgm_freearray(*image, *rows);
 	*image = img_new;
 }
 
@@ -604,7 +649,7 @@ void write_debug(gray **image, gray max, int cols, int rows, int col[], int row[
 	FILE *fp;
 	gray *cur_row;
 	gray *row_blacks;
-	int row_i, col_i;
+	int row_i;
 
 	row_blacks = malloc((cols) * sizeof(gray));
 	cur_row = malloc((cols) * sizeof(gray));
@@ -628,4 +673,87 @@ void write_debug(gray **image, gray max, int cols, int rows, int col[], int row[
 
 	fclose(fp);
 	return;
+}
+
+int training_save(void)
+{
+	struct trained_char *cur_point;
+
+	cur_point = training_data;
+
+	while (cur_point->codepoint != UNDEFINED_CODEPOINT) {
+		struct trained_picture *cur_pic;
+		cur_pic = cur_point->pictures;
+		while (cur_pic != NULL) {
+			if (cur_pic->dirty == 1) {
+				char name[20];
+				FILE *fp;
+
+				sprintf(name, "./training/char_%04x_XXXXXX", cur_point->codepoint);
+				mkstemp(name);
+
+				fp = fopen(name, "w");
+				pgm_writepgm(fp, cur_pic->data, cur_pic->cols, cur_pic->rows, cur_pic->max, 0);
+				fclose(fp);
+
+				cur_pic->dirty = 0;
+			}
+			cur_pic = cur_pic->next;
+		}
+
+		cur_point++;
+	}
+
+	return 0;
+}
+
+int training_load(void)
+{
+	DIR *entry;
+	struct dirent *derp;
+	int count = 0;
+	struct stat st_buf;
+
+	entry = opendir("./training");
+
+	chdir("./training");
+
+	derp = readdir(entry);
+	while (derp != NULL) {
+		stat(derp->d_name, &st_buf);
+		if (S_ISREG(st_buf.st_mode))
+			count += train_load_char(derp->d_name);
+
+		derp = readdir(entry);
+	}
+	closedir(entry);
+
+	chdir("..");
+
+	return count;
+}
+
+int train_load_char(char *filename)
+{
+	gray **img;
+	int rows, cols;
+	gray max;
+	FILE *fp;
+
+	int chr;
+
+	sscanf(filename, "char_%x", &chr);
+
+	printf("reading %s into %02x(%c)\n", filename, chr, chr);
+
+	fp = fopen(filename, "r");
+	img = pgm_readpgm(fp, &cols, &rows, &max);
+	fclose(fp);
+
+	print_char_plain(img, max, rows, cols);
+
+	train_char(img, max, 0, rows, 0, cols, chr, 0, 0);
+
+	pgm_freearray(img, rows);
+	return 1;
 }
