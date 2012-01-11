@@ -298,7 +298,7 @@ struct recognition *recognize_char(gray **image, gray max, int top, int bottom, 
 	}
 
 	value /= (bottom-top) * (right-left);
-	if (value > 192)
+	if (value > 240)
 		found->guess[0].codepoint = ' ';
 	else
 		found->guess[0].codepoint = 'X';
