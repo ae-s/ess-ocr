@@ -41,7 +41,7 @@ void write_debug(gray **image, gray max, int cols, int rows, int col[], int row[
 
 float compare_char(gray **reference,
 		   gray refmax,
-		   int refwide, int refhigh,
+		   int refhigh, int refwide,
 		   gray **test, gray testmax,
 		   int top, int bottom, int left, int right);
 
@@ -56,8 +56,8 @@ struct recognition {
 struct trained_picture {
 	int rows;
 	int cols;
+	int max;
 	gray **data;
-	int example_count;
 	struct trained_picture *next;
 };
 
@@ -114,7 +114,7 @@ int main(int argc, char *argv[])
 	}
 */
 
-	out_page = malloc(2048 * sizeof(char));
+	out_page = malloc(1024 * 32 * sizeof(char));
 
 	for (c_row = 1; c_row < row_loc[0] - 1; c_row++) {
 		for (c_col = 1; c_col < col_loc[0]; c_col++) {
@@ -289,6 +289,7 @@ int query_char(gray **image, gray max, int top, int bottom, int left, int right)
 	return (int) input[0];
 }
 
+#define JITTER 4
 /* Attempt to identify a character mechanically.
  */
 struct recognition *recognize_char(gray **image, gray max, int top, int bottom, int left, int right)
@@ -304,10 +305,57 @@ struct recognition *recognize_char(gray **image, gray max, int top, int bottom, 
 	}
 
 	value /= (bottom-top) * (right-left);
-	if (value > 240)
+	if (value > 240) {
+		// very white, probably a space
 		found->guess[0].codepoint = ' ';
-	else
-		found->guess[0].codepoint = 'X';
+	} else {
+		// not very white, probably a character
+		struct trained_char *cur_test;
+		float cur_best_val = INFINITY;
+		struct trained_char *best_test;
+		float best_val = INFINITY;
+
+		int test_count = 0;
+
+		cur_test = training_data;
+
+		while (test_count < training_size) {
+			struct trained_picture *pic;
+			cur_best_val = INFINITY;
+			pic = cur_test->pictures;
+			while (pic != NULL) {
+				float bval;
+				int xo, yo;
+				for (xo = -JITTER; xo < JITTER; xo++)
+					for (yo = -JITTER; yo < JITTER; yo++) {
+						bval = compare_char(pic->data, pic->max,
+								    pic->rows, pic->cols,
+								    image, max,
+								    top, bottom, left, right);
+						if (bval < cur_best_val)
+							cur_best_val = bval;
+					}
+
+				pic = pic->next;
+			}
+
+			if (cur_best_val < best_val) {
+				best_val = cur_best_val;
+				best_test = cur_test;
+			}
+
+			cur_test++;
+			test_count++;
+		}
+
+		found->guess[0].codepoint = best_test->codepoint;
+		found->guess[0].certainty = best_val;
+
+		if (best_val > 0.1)
+			found->guess[0].codepoint = 'X';
+	}
+
+	return found;
 }
 
 /* Compare the small image `reference' to a region of the large image `test'.
@@ -315,23 +363,28 @@ struct recognition *recognize_char(gray **image, gray max, int top, int bottom, 
  */
 float compare_char(gray **reference,
 		   gray refmax,
-		   int refwide, int refhigh,
+		   int refhigh, int refwide,
 		   gray **test, gray testmax,
 		   int top, int bottom, int left, int right)
 {
 	int row, col;
-	int error;
-	int test_adjust;
+	float error;
+	float test_adjust;
 
 	test_adjust = refmax / testmax;
-
 	error = 0;
-	for (row = 0; row < refhigh; row++)
+
+	for (row = 0; row < refhigh; row++) {
 		for (col = 0; col < refwide; col++) {
-			error += abs(reference[row][col] - test[row + top][col + left] * test_adjust);
+			gray pix_ref, pix_test;
+			pix_ref = reference[row][col];
+			pix_test = test[row + top][col + left];
+			error += fabs((float)(pow(((float)pix_ref - (float)pix_test) * test_adjust, 2)));
 		}
-	printf("error = %d\n", error);
-	return (float)error;
+	}
+
+	error = sqrt(error / (row * col)) / testmax;
+	return error;
 }
 
 /* Put a character into the set of trained pictures.
@@ -349,26 +402,35 @@ int train_char(gray **image, gray max, int top, int bottom, int left, int right,
 		memset(training_data, 0, training_size * sizeof(struct trained_char));
 	}
 
+	chosen_one = malloc(sizeof(struct trained_picture));
+	chosen_one->rows = bottom-top + 2 * overshoot;
+	chosen_one->cols = right-left + 2 * overshoot;
+	chosen_one->data = pgm_allocarray(chosen_one->cols, chosen_one->rows);
+	chosen_one->max = max;
+	chosen_one->next = NULL;
+
+	for (t_row = 0; t_row < bottom-top + 2*overshoot; t_row++)
+		for (t_col = 0; t_col < right-left + 2*overshoot; t_col++) {
+			gray dat = image[top + t_row][left + t_col];
+			chosen_one->data[t_row][t_col] = dat;
+		}
+
 	while (1) {
 		if (training_data[i].codepoint == UNDEFINED_CODEPOINT) {
 			/* This is a character that is new to us */
+			puts("new character");
 			training_data[i].codepoint = codepoint;
-			training_data[i].pictures = malloc(sizeof(struct trained_picture));
-			chosen_one = training_data[i].pictures;
-			chosen_one->data = pgm_allocarray(right-left + 2 * overshoot, bottom-top + 2 * overshoot);
-			chosen_one->example_count = 0;
-			chosen_one->next = NULL;
-
-			for (t_row = 0; t_row < bottom-top + 2*overshoot; t_row++)
-				for (t_col = 0; t_col < right-left + 2*overshoot; t_col++)
-					chosen_one->data[t_row][t_col] = 0;
+			training_data[i].pictures = chosen_one;
 
 			break;
 		} else if (training_data[i].codepoint == codepoint) {
 			/* Hmm, seen one of these already */
-			chosen_one = training_data[i].pictures;
+			printf("adding new at %d\n", i);
+			chosen_one->next = training_data[i].pictures;
+			training_data[i].pictures = chosen_one;
 			break;
 		} else if (i > training_size) {
+			puts("training table full!");
 			/* Training table is full!
 			 * XXX REALLOC
 			 */
@@ -395,7 +457,6 @@ int train_char(gray **image, gray max, int top, int bottom, int left, int right,
 		}
 		t_row++;
 	}
-	chosen_one->example_count++;
 	return;
 }
 
