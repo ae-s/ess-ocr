@@ -2,7 +2,7 @@
  * Duncan Smith
  * 2009, 2011
  *
- * gcc ess-ocr.c -ggdb3 -Wall -lnetpbm -lm -std=C99
+ * gcc ess-ocr.c -ggdb3 -Wall -lnetpbm -lm -std=c99
  */
 
 #include <stdio.h>
