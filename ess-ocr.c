@@ -39,6 +39,12 @@ int find_square (gray **image, gray max,
 void crop_to_rect(gray ***image, int *cols, int *rows, gray max);
 void write_debug(gray **image, gray max, int cols, int rows, int col[], int row[]);
 
+float compare_char(gray **reference,
+		   gray refmax,
+		   int refwide, int refhigh,
+		   gray **test, gray testmax,
+		   int top, int bottom, int left, int right);
+
 #define MAX_RECOGNITION 16
 struct recognition {
 	struct recognized_char {
@@ -307,7 +313,11 @@ struct recognition *recognize_char(gray **image, gray max, int top, int bottom, 
 /* Compare the small image `reference' to a region of the large image `test'.
  * Returns a estimate of similarity.
  */
-float compare_char(gray **reference, int refwide, int refhigh, gray refmax, gray **test, gray testmax, int top, int bottom, int left, int right)
+float compare_char(gray **reference,
+		   gray refmax,
+		   int refwide, int refhigh,
+		   gray **test, gray testmax,
+		   int top, int bottom, int left, int right)
 {
 	int row, col;
 	int error;
