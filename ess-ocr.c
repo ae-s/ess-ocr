@@ -37,6 +37,7 @@ int find_square (gray **image, gray max,
 		 int *ll_x, int *ll_y,
 		 int *lr_x, int *lr_y);
 void crop_to_rect(gray ***image, int *cols, int *rows, gray max);
+void write_debug(gray **image, gray max, int cols, int rows, int col[], int row[]);
 
 #define MAX_RECOGNITION 16
 struct recognition {
@@ -84,15 +85,13 @@ int main(int argc, char *argv[])
 	crop_to_rect(&image, &pcols, &prows, max);
 	printf("- is now %d cols by %d rows\n", pcols, prows);
 
-	fp = fopen("crop.pgm", "w");
-	pgm_writepgm(fp, image, pcols, prows, max, 0);
-	fclose(fp);
-
 #define DPI 300
 	puts("Finding columns");
 	col_loc = rowdown(image, max, VERT, prows, pcols, .06375 * DPI);
 	puts("Finding rows");
 	row_loc = rowdown(image, max, HORZ, prows, pcols, .10750 * DPI);
+
+	write_debug(image, max, pcols, prows, col_loc, row_loc);
 
 	printf("%d rows and %d columns\n", row_loc[0], col_loc[0]);
 
@@ -510,4 +509,37 @@ void crop_to_rect(gray ***image, int *cols, int *rows, gray max)
 	*cols = new_cols;
 	pgm_freearray(*image, rows);
 	*image = img_new;
+}
+
+/* create an image with dividing lines scribed on it
+ */
+void write_debug(gray **image, gray max, int cols, int rows, int col[], int row[])
+{
+	FILE *fp;
+	gray *cur_row;
+	gray *row_blacks;
+	int row_i, col_i;
+
+	row_blacks = malloc((cols) * sizeof(gray));
+	cur_row = malloc((cols) * sizeof(gray));
+	memset(row_blacks, 0, (cols) * sizeof(gray));
+
+	fp = fopen("crop.pgm", "w");
+	pgm_writepgminit(fp, cols, rows, max, 0);
+	row_i = 1;
+
+	for (int nrow = 0 ; nrow < rows; nrow++) {
+		if (row[row_i] == nrow) {
+			row_i++;
+			pgm_writepgmrow(fp, row_blacks, cols, max, 0);
+		} else {
+			memcpy(cur_row, image[nrow], cols * sizeof(gray));
+			for (int col_i = 1; col_i < col[0]; col_i++)
+				cur_row[col[col_i]] = 0;
+			pgm_writepgmrow(fp, cur_row, cols, max, 0);
+		}
+	}
+
+	fclose(fp);
+	return;
 }
