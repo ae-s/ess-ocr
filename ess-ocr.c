@@ -28,6 +28,10 @@
 // Looking for a division between characters
 #define VERT 1
 
+// when moving things around to search for a fit, move by up to this
+// distance.
+#define JITTER 4
+
 int *rowdown	(gray **image, gray max, int direction, int num_rows, int num_cols, float distance);
 
 float *countup	(gray **image, gray max, int direction, int num_rows, int num_cols);
@@ -57,6 +61,8 @@ float compare_char(gray **reference,
 		   int refhigh, int refwide,
 		   gray **test, gray testmax,
 		   int top, int bottom, int left, int right);
+
+float weight_border(gray **img, gray max, int top, int bottom, int left, int right);
 
 #define MAX_RECOGNITION 16
 struct recognition {
@@ -135,18 +141,63 @@ int main(int argc, char *argv[])
 	for (c_row = 1; c_row < row_loc[0] - 1; c_row++) {
 		for (c_col = 1; c_col < col_loc[0]; c_col++) {
 			char chr;
-			struct recognition *recog = recognize_char(image, max, row_loc[c_row], row_loc[c_row+1], col_loc[c_col], col_loc[c_col+1]);
+
+			int x, y, xend, yend;
+
+			/*
+			 * how far to offset the character cell from
+			 * the given one in order to ensure no blobs
+			 * sitting across the cell borders.
+			 */
+			int xoff, yoff;
+			float best_cost = 0;
+			int best_xoff, best_yoff;
+
+			char bar_x[] = "|----o----|";
+			char bar_y[] = "|----o----|";
+
+			y    = row_loc[c_row];
+			yend = row_loc[c_row + 1];
+			x    = col_loc[c_col];
+			xend = col_loc[c_col + 1];
+
+			/* find a good place to drop the character cell border */
+			for (xoff = -JITTER; xoff <= JITTER; xoff++)
+				for (yoff = -JITTER; yoff <= JITTER; yoff++) {
+					float cost;
+					cost = weight_border(image, max, y + yoff, yend + yoff, x + xoff, xend + xoff);
+					if (cost > best_cost) {
+						best_xoff = xoff;
+						best_yoff = yoff;
+						best_cost = cost;
+					}
+				}
+
+			bar_x[5 + best_xoff] = '@';
+			bar_y[5 + best_yoff] = '@';
+
+			printf("Jittering border by %s in x and %s in y\n", bar_x, bar_y);
+
+			x    += best_xoff;
+			xend += best_xoff;
+			y    += best_yoff;
+			yend += best_yoff;
+
+			struct recognition *recog = recognize_char(image, max, y, yend, x, xend);
 			if (recog != NULL) {
 				chr = recog->guess[0].codepoint;
-				if (chr == 'X') {
-					chr = query_char(image, max, row_loc[c_row], row_loc[c_row+1], col_loc[c_col], col_loc[c_col+1]);
+				if (chr == '\0') {
+					chr = query_char(image, max, y, yend, x, xend);
 				}
 				free(recog);
 			} else {
-				chr = query_char(image, max, row_loc[c_row], row_loc[c_row+1], col_loc[c_col], col_loc[c_col+1]);
+				chr = query_char(image, max, y, yend, x, xend);
 			}
 			out_page[out_page_ptr++] = chr;
 			out_page[out_page_ptr + 1] = '\0';
+			printf("\e[H\e[2J");
+
+			//printf("\e[H");
 			puts(out_page);
 			printf("ptr %d\n", out_page_ptr);
 		}
@@ -158,6 +209,25 @@ int main(int argc, char *argv[])
 	fclose(outfile);
 
 	return 0;
+}
+
+float weight_border(gray **img, gray max, int top, int bottom, int left, int right)
+{
+	int off;
+	float total = 0;
+	float divisor = 0;
+
+	for (off = top; off < bottom; off++) {
+		total += img[off][left] + img[off][right];
+		divisor += max * 2;
+	}
+
+	for (off = left + 1; off < right - 1; off++) {
+		total += img[top][off] + img[bottom][off];
+		divisor += max * 2;
+	}
+
+	return total / divisor;
 }
 
 /* Throw down row boundaries all in one go.
@@ -333,7 +403,6 @@ int query_char(gray **image, gray max, int top, int bottom, int left, int right)
 	return (int) input[0];
 }
 
-#define JITTER 4
 /* Attempt to identify a character mechanically.
  */
 struct recognition *recognize_char(gray **image, gray max, int top, int bottom, int left, int right)
@@ -397,7 +466,7 @@ struct recognition *recognize_char(gray **image, gray max, int top, int bottom, 
 		found->guess[0].certainty = best_val;
 
 		if (best_val > 0.1)
-			found->guess[0].codepoint = 'X';
+			found->guess[0].codepoint = '\0';
 	}
 
 	return found;
