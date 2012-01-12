@@ -153,7 +153,7 @@ int main(int argc, char *argv[])
 			float best_cost = 0;
 			int best_xoff, best_yoff;
 
-			char bar_x[] = "|----o----|";
+			char bar_x[] = "|--------o--------|";
 			char bar_y[] = "|----o----|";
 
 			y    = row_loc[c_row];
@@ -162,7 +162,7 @@ int main(int argc, char *argv[])
 			xend = col_loc[c_col + 1];
 
 			/* find a good place to drop the character cell border */
-			for (xoff = -JITTER; xoff <= JITTER; xoff++)
+			for (xoff = -JITTER*2; xoff <= JITTER*2; xoff++)
 				for (yoff = -JITTER; yoff <= JITTER; yoff++) {
 					float cost;
 					cost = weight_border(image, max, y + yoff, yend + yoff, x + xoff, xend + xoff);
@@ -173,7 +173,7 @@ int main(int argc, char *argv[])
 					}
 				}
 
-			bar_x[5 + best_xoff] = '@';
+			bar_x[9 + best_xoff] = '@';
 			bar_y[5 + best_yoff] = '@';
 
 			printf("Jittering border by %s in x and %s in y\n", bar_x, bar_y);
