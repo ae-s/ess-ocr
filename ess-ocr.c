@@ -164,6 +164,8 @@ int main(int argc, char *argv[])
 			/* find a good place to drop the character cell border */
 			for (xoff = -JITTER*2; xoff <= JITTER*2; xoff++)
 				for (yoff = -JITTER; yoff <= JITTER; yoff++) {
+					if ((y + yoff < 0) || (yend + yoff > prows) || (x + xoff < 0) || (xend + xoff > pcols))
+						continue;
 					float cost;
 					cost = weight_border(image, max, y + yoff, yend + yoff, x + xoff, xend + xoff);
 					if (cost > best_cost) {
