@@ -179,7 +179,7 @@ int main(int argc, char *argv[])
 			bar_x[9 + best_xoff] = '@';
 			bar_y[5 + best_yoff] = '@';
 
-			printf("Jittering border by %s in x and %s in y\n", bar_x, bar_y);
+			printf("\r[%d,%d] Jittering border by %s in x and %s in y", c_row, c_col, bar_x, bar_y);
 
 			x    += best_xoff;
 			xend += best_xoff;
@@ -190,19 +190,22 @@ int main(int argc, char *argv[])
 			if (recog != NULL) {
 				chr = recog->guess[0].codepoint;
 				if (chr == '\0') {
+					printf("\e[H\e[2J");
+
+					puts(out_page);
 					chr = query_char(image, max, y, yend, x, xend);
 				}
 				free(recog);
 			} else {
+				printf("\e[H\e[2J");
+
+				//printf("\e[H");
+				puts(out_page);
 				chr = query_char(image, max, y, yend, x, xend);
 			}
 			out_page[out_page_ptr++] = chr;
 			out_page[out_page_ptr + 1] = '\0';
-			printf("\e[H\e[2J");
-
-			//printf("\e[H");
-			puts(out_page);
-			printf("ptr %d\n", out_page_ptr);
+			//printf("ptr %d\n", out_page_ptr);
 		}
 		out_page[out_page_ptr++] = '\n';
 	}
@@ -401,7 +404,11 @@ int query_char(gray **image, gray max, int top, int bottom, int left, int right)
 	print_char(image, max, top, bottom, left, right);
 	puts("What is this?");
 	fgets(&input, 9, stdin);
-	train_char(image, max, top, bottom, left, right, (int)input[0], 1, 1);
+	if (input[1] == '.' ) {
+	  puts("not training this character");
+	} else {
+	  train_char(image, max, top, bottom, left, right, (int)input[0], 1, 1);
+	}
 	training_save();
 	return (int) input[0];
 }
