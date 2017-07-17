@@ -53,6 +53,7 @@ int find_square (gray **image, gray max,
 		 int *lr_x, int *lr_y);
 void crop_to_rect	(gray ***image, int *cols, int *rows, gray max);
 void write_debug	(gray **image, gray max, int cols, int rows, int col[], int row[]);
+int training_load	(void);
 int training_save	(void);
 int train_load_char	(char *filename);
 
@@ -93,18 +94,18 @@ int training_size = 0;
 
 int main(int argc, char *argv[])
 {
-	gray **image;
-	FILE *fp;
-	FILE *outfile;
+	gray **image = NULL;
+	FILE *fp = NULL;
+	FILE *outfile = NULL;
 	gray max;
-	int prows, pcols;
-	int *row_loc;
-	int *col_loc;
+	int prows = 0, pcols = 0;
+	int *row_loc = NULL;
+	int *col_loc = NULL;
 
-	char *out_page;
-	int out_page_ptr;
+	char *out_page = NULL;
+	int out_page_ptr = 0;
 
-	int c_row, c_col;
+	int c_row = 0, c_col = 0;
 
 	pgm_init(&argc, argv);
 
@@ -149,9 +150,9 @@ int main(int argc, char *argv[])
 			 * the given one in order to ensure no blobs
 			 * sitting across the cell borders.
 			 */
-			int xoff, yoff;
+			int xoff = 0, yoff = 0;
 			float best_cost = 0;
-			int best_xoff, best_yoff;
+			int best_xoff = 0, best_yoff = 0;
 
 			char bar_x[] = "|--------o--------|";
 			char bar_y[] = "|----o----|";
@@ -427,7 +428,7 @@ struct recognition *recognize_char(gray **image, gray max, int top, int bottom, 
 		// not very white, probably a character
 		struct trained_char *cur_test;
 		float cur_best_val = INFINITY;
-		struct trained_char *best_test;
+		struct trained_char *best_test = NULL;
 		float best_val = INFINITY;
 
 		int test_count = 0;
