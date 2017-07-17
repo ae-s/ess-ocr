@@ -30,7 +30,7 @@
 
 // when moving things around to search for a fit, move by up to this
 // distance.
-#define JITTER 4
+#define JITTER 2
 
 int *rowdown	(gray **image, gray max, int direction, int num_rows, int num_cols, float distance);
 
