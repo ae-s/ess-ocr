@@ -1,6 +1,6 @@
 /* Split scans of listing files into character cells.
- * Duncan Smith
- * 2009, 2011
+ * Astrid Smith
+ * 2009, 2011, 2017
  *
  * gcc ess-ocr.c -ggdb3 -Wall -lnetpbm -lm -std=c99
  */
