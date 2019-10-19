@@ -1,6 +1,6 @@
 /* Split scans of listing files into character cells.
  * Astrid Smith
- * 2009, 2011, 2017
+ * 2009, 2011, 2017, 2019
  *
  * gcc ess-ocr.c -ggdb3 -Wall -lnetpbm -lm -std=c99
  */
@@ -18,7 +18,7 @@
 #include <unistd.h>
 #include <dirent.h>
 
-#include <pgm.h>
+#include <netpbm/pgm.h>
 
 #define NO_ROW -1
 
@@ -104,6 +104,7 @@ int main(int argc, char *argv[])
 
 	char *out_page = NULL;
 	int out_page_ptr = 0;
+    char *out_line_ptr = NULL;
 
 	int c_row = 0, c_col = 0;
 
@@ -140,6 +141,7 @@ int main(int argc, char *argv[])
 	out_page = malloc(1024 * 32 * sizeof(char));
 
 	for (c_row = 1; c_row < row_loc[0] - 1; c_row++) {
+        out_line_ptr = &out_page[out_page_ptr];
 		for (c_col = 1; c_col < col_loc[0]; c_col++) {
 			char chr;
 
@@ -179,7 +181,7 @@ int main(int argc, char *argv[])
 			bar_x[9 + best_xoff] = '@';
 			bar_y[5 + best_yoff] = '@';
 
-			printf("\r[%d,%d] Jittering border by %s in x and %s in y", c_row, c_col, bar_x, bar_y);
+			printf("\r[% 3d,% 3d] Jittering border by %s in x and %s in y", c_row, c_col, bar_x, bar_y);
 
 			x    += best_xoff;
 			xend += best_xoff;
@@ -193,8 +195,11 @@ int main(int argc, char *argv[])
 					printf("\e[H\e[2J");
 
 					puts(out_page);
+                    puts("please identify:");
 					chr = query_char(image, max, y, yend, x, xend);
-				}
+				} else {
+                    printf("|%s|", out_line_ptr);
+                }
 				free(recog);
 			} else {
 				printf("\e[H\e[2J");
@@ -765,10 +770,10 @@ int training_save(void)
 		cur_pic = cur_point->pictures;
 		while (cur_pic != NULL) {
 			if (cur_pic->dirty == 1) {
-				char name[20];
+				char name[32];
 				FILE *fp;
 
-				sprintf(name, "./training/char_%04x_XXXXXX", cur_point->codepoint);
+				snprintf(name, 32, "./training/char_%04x_XXXXXX", cur_point->codepoint);
 				mkstemp(name);
 
 				fp = fopen(name, "w");
